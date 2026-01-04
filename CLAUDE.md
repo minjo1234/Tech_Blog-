@@ -69,3 +69,4 @@ font: 400 18px 'Roboto Slab', AppleSDGothicNeo, sans-serif;
 
 **마지막 업데이트**: 2026-01-02
 **작성자**: Claude Code
+**작성자**: Claude Code
