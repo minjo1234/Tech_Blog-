@@ -1,0 +1,112 @@
+---
+title: "Claude Token Management Guide"
+date: "2025-12-19"
+description: "I've been using Claude Code as my main development tool. However, I kept failing at token management, so I'm documenting how to manage it properly."
+tags: ["claude", "ai", "llm"]
+thumbnail: "/post/docker/thumbnail.png"
+---
+
+## The Problem
+
+I'm using Claude Code extensively for development. Except for one thing... token management is terrible.
+Even when I try to be careful, I run out of tokens in 1.5 to 2 hours and have to wait until they refresh.
+During that time, I organize documentation and review code I've modified, but to further improve productivity, I'm looking for and applying token management techniques.
+
+Regularly clean up context after completing each task.
+
+### 1. You probably already know this
+
+1. Reset context with the `/clear` command
+2. Check current status with the `/context` command
+- If any item exceeds 80%, proceed with clear
+3. `/compact`
+4. Set up Auto-compact through the `/config` command, and it will automatically clean up context
+
+### 2. Claude Skills
+Custom Commands vs MCP / Sub Agents / Skills
+
+Custom Commands: Executed through commands each time.
+MCP, Sub Agents, Skills: Operate automatically.
+
+Traditional approach (Custom Commands / MCP / Sub Agents)
+Claude Skills use lazy loading - only what's needed, when it's needed
+
+Traditional approach (Custom Commands / Sub Agents)
+- AI probabilistically writes context, so different answers may occur.
+
+Claude Skills execute scripts directly.
+- Execute pre-written scripts, code is not read, only execution results are stored in context.
+
+Overwhelming token efficiency
+100% identical results - same script execution
+Solves inconsistency problems due to AI's non-deterministic nature
+Optimal for large-scale automation and repetitive tasks
+
+Claude Command: Shortcuts for frequently used prompts
+Subagent: Specialized AI for specific roles
+MCP: External system connection
+Claude Skills: Work manual that helps do specific tasks better
+- Sub agent: Hiring specialists
+- Claude Skills: Sharing systematic work manuals with specialists
+
+### Claude Code Workflow
+- PRD document creation
+- Test management tools
+
+### Claude Code Plugin
+
+/commit
+/code-review - Create custom commands for repetitive tasks
+
+/notion, supabase, etc. external systems -> MCP
+
+Specialized knowledge -> Sub agent
+
+But there's a problem.
+How do you use these features in other projects?
+
+Copy all defined features to the current project.
+marketplace path: https://claudemarketplaces.com/
+
+Templates that make it easy to share Claude Code's MCP, skills, and custom commands.
+
+Recommended Claude Code plugin: frontend design
+
+Create a beer curation service PRD as docs/PRO.md file.
+Plan mode transition
+PRD (Product Requirements Document)
+
+  - Plugin: Complete extension package
+  - Skills: Individual features included in the plugin (used automatically by Claude)
+
+
+Each team has rules, so when a new project starts, defining the rules
+and defining them as skills makes it good for team use.
+
+Claude Skills
+- Prompt creation feature
+- SubAgent creation feature
+- Claude Skills
+
+Skill.md is the standard.
+Write automation tasks in skills to handle work.
+
+Claude Skills' Actual Role
+Technical Specification
+
+How-to guide for performing specific tasks
+Specifies technology stack, libraries, best practices to use
+Example: "When creating pptx, use python-pptx, layout like this, fonts like that"
+
+Advantages of hierarchical structure
+Claude Skills (top-level orchestrator)
+├-> Sub Agent call (process complex logic)
+├-> Plugin call (integrate external API)
+└-> Direct processing (simple tasks)
+As Jo said, Skill "defines technology selection and workflow according to the situation" and orchestrates lower-level tools as needed.
+
+
+PyTorch Claude Skills collection https://discuss.pytorch.kr/t/voltagent-claude-skills-awesome-claude-skills/8122
+
+Reference
+Claude Code Token Management Guide: https://www.youtube.com/watch?v=VbD8ITrJ6lg

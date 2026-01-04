@@ -1,0 +1,193 @@
+---
+title: "나만의 테스트 코드 작성법"
+date: "2025-12-17"
+description: "Freemarker와 CDN 방식의 Vue를 사용하고 있었다. 컴포넌트 형식으로 재사용되는 소스를 .js 파일로 생성해두었는데 해외 고객이 발생했고 웹에 있는 모든 한글을 영문으로 변경이 필요했다..!"
+tags: ["Azure", "Workload", "Public Cloud"]
+thumbnail: "/post/docker/thumbnail.png"
+---
+
+2025-12-17일 포스팅 시작
+나만의 테스트 코드 작성법을 만들어보려고 한다.
+
+물론 책이나 강의에서 테스트 코드 작성법에 대해서 이야기하지만
+나만의 테스트 코드 작성법을 연습한 이후에 보는 게 더 와 닿을 것 이라고 생각한다.
+
+
+Mock : 행위 검증 (호출했는지 안 했는지, 호출했다면 몇 번 했는지 등등을 정의한다.)
+Stub : 임의로 값을 반환하도록 설정
+
+TestCode Class 파일에 상위에 Mock, Stub, new 객체로 Controller, Repository, Service를 선언하는 경우가 있다.
+
+호출을 검증할 것 인가? -> Mock
+실제 로직이 수행되어야 하는가? -> new
+- 실제로 메서드를 호출하기 위해서는 의존성을 부여받은 new 객체로 생성해야 한다.
+값을 임의적으로 설정해줄 것인가? -> Stub
+
+객체 선언위치도 중요하다.
+
+이벤트를 재시도하는 테스트 컨트롤러를 사용한다고 가정하자.
+이벤트의 재시도는 FAIL또는 FAIL_TASK 에서만 동작하도록 하는 테스트 케이스를 작성한다고 했을떄
+new 객체로 만드는 Controller의 경우 실제 메서드의 호출하기 때문에 의존성을 부여해줘야한다.
+하지만 groovy의 경우에는 상위 -> 하위로 순차적으로 코드가 실행되기 때문에 객체의 선언 위치는 매우 중요하다.
+의존성이 되는 Mock, Stub을 미리 선언하고 이를 주입하는 대상을 나중에 선언한다.
+
+```java
+class EventReplayControllerTest extends Specification {
+    def eventReplayController = new EventReplayController(eventSourceRepository, eventOrchestrator);
+    def eventSourceRepository = Stub(EventSourceRepository);
+    def eventOrchestrator = Mock(EventOrchestrator);
+    }
+```
+
+```java
+class EventReplayControllerTest extends Specification {
+    def eventSourceRepository = Stub(EventSourceRepository);
+    def eventOrchestrator = Mock(EventOrchestrator);
+    def eventReplayController = new EventReplayController(eventSourceRepository, eventOrchestrator);
+}
+```
+
+
+## 테스트 케이스 내부에서 객체를 생성하고 값을 선언하는 경우
+
+```groovy
+class EventReplayControllerTest extends Specification {
+    def "FAIL, FAIL_TASK 상태의 이벤트 재시도 시 성공 응답 반환"() {
+        given: "FAIL 상태의 EventSource UUID"
+        def uuid = "test-event-uuid-001"
+        def eventSource = Stub(EventSource) {getEventStatus() >> EventStatus.FAIL}
+        eventSourceRepository.findByUuid(uuid) >> Optional.of(eventSource)
+    }
+}
+```
+
+
+이렇게 짜여진 테스트 케이스를 보면 Mock 객체는 검증할때만 사용하는 건데 왜 eventSource를 Mock 객체로 생성해도,
+stubbing 문법 `{getEventStatus() >> EventStatus.FAIL}` 을 통해 값을 선언해준다면 Stub 객체처럼 (값을 할당해서)
+사용할 수 있다.
+Mock은 Stub의 기능을 포함하는 성질이 있기 때문이다.
+
+근데 궁금증이 있었다.
+
+### Stub의 값 선언과 호출
+
+stub 객체이면 eventSource의 EventStatus의 값을 가져오는 getEventStatus() 메서드는 실행되면 안 될 것 같은데
+실행이 되어서 검증문에서 eventSource.getEventStatus() == EventStatus.FAIL 에 검증이 된 것이다..
+
+- 호출은 자유롭게 가능하다.
+- stubbing한 값은 반환하는게 Stub 객체의 특징이다.
+- 실제 호출이 된 것은 아니고 값이 반환된 것이다.
+- 그래서 호출은 검증되는 Mock 객체와 차이가 존재한다.
+
+실행 로직의 실행이 아닌 (x) : 실제 Java 코드의 실행이 아니다.
+프록시 객체의 응답 (o) : 가짜 객체한데 요청에 따른 반환값을 미리 설정해주는 것이다.
+
+
+### Stub의 '미래의 호출'에 대한 약속이다.
+
+eventSourceRepository.findByUuid(uuid)에 대한 값을 미리 정의해둔다.
+eventReplayController.replayEvent에서 eventSourceRepository를 호출하는 구문이 있는데
+이때 미리정의된 eventSourceRepository.findByUuid(uuid)에 대한 값을 사용하도록 명시에 둔 것이다.
+(반환에 대한 약속)
+
+- Behavior Definition, Interaction Recording
+
+```groovy
+ def "FAIL, FAIL_TASK 상태의 이벤트 재시도 시 성공 응답 반환"() {
+        given: "FAIL 상태의 EventSource UUID"
+        def uuid = "test-event-uuid-001"
+        def eventSource = Stub(EventSource) {getEventStatus() >> EventStatus.FAIL}
+        // 미래에 해당 메소드를 사용한다면 값의 반환을 미리 정의해 둔 것이다.
+        eventSourceRepository.findByUuid(uuid) >> Optional.of(eventSource)
+
+        when: "재시도 API 호출"
+        def response = eventReplayController.replayEvent(uuid)
+
+        then: "eventOrchestrator.replay() 호출 검증"
+        1 * eventOrchestrator.replay(eventSource)
+
+        and: "빈 문자열 반환"
+        response == ""
+        eventSource.getEventStatus() == EventStatus.FAIL
+    }
+```
+
+### setup()
+
+모든 테스트케이스에서 동일한 컨트롤러와 의존성을 사용하는 경우에는
+필드 선언보다 setup() 메서드를 활용하는 것이 좋다.
+
+new 객체에서 Mock/Stub 객체한데 의존하여 실제 행위와 값에 대한 감시를 한다,
+조건문의 판단등이 요구되는 경우에는 실제 객체를 생성하여 판단한다.
+
+API 성공을 가정하고 값을 가져오는 경우 : Stub
+호출횟수를 검증하려는 경우 : Mock
+내부 로직, 조건문 판단이 필요한 경우에는 : new 객체로 판단한다.
+
+- 잘못된 메서드
+- 잘못된 값으로 데이터가 내가 예상하는 것과 다른 값이 들어가는지를 확인할 수 있따.
+- 메서드는 항상 값을 빠뜨리지 않고 가지고 있어야한다.
+
+판단이 필요한 조건문이 생기는 경우에는 실제 객체를 만들어서 판단한다.
+모든 이벤트가 재시작되면 안되고 실패이벤트만 재시작 되어야하는데
+Stub으로는 해당 조건문을 판단할수가 없었고, 그 문제를 해결하기 위해 실제 객체를 만들어야 한다는 것을 이해했다.
+
+```groovy
+
+    def "FAIL, FAIL_TASK 상태의 이벤트 재시도 시 성공 응답 반환"() {
+        given: "FAIL 상태의 EventSource"
+        def uuid = "test-event-uuid-001"
+        def eventSource = EventSource.builder()
+                .uuid(uuid)
+                .eventKey("test-key")
+                .eventStatus(EventStatus.FAIL)
+                .build()
+        eventSourceRepository.findByUuid(uuid) >> Optional.of(eventSource)
+
+        when: "재시도 API 호출"
+        def response = eventReplayController.replayEvent(uuid)
+
+        then: "eventOrchestrator.replay() 호출 검증"
+        1 * eventOrchestrator.replay(eventSource)
+
+        and: "빈 문자열 반환"
+        response == ""
+    }
+```
+
+테스트 케이스는 기본적으로 많으면 많을수록 다다익선이라고 생각하지만
+우리의 시간은 무제한이 아니기때문에 ROI(비용대비 시간을 살펴봐야한다고 생각한다.)
+
+1.Unit Test
+- 가장 작은 단위의 발생할 수 로직의 테스트 케이스를 작성하자.
+
+2.통합 테스트
+- API 호출부터 DB에 저장되는 하나의 플로우 ?
+- 트랜잭션 문제:
+- SQL 문법
+- 제약 조건 위반
+- CleanUp으로 테스트 성공시 Rollback하여 데이터의 쌓임을 방지한다.
+
+나의 기준
+- 단위 테스트는 DB를 사용하지 않고, 로직에 대한 판단을 한다.
+- 통합 테스트 DB 사용, 로직의 결과 반영을 확인
+
+
+TECH_DETAIL.md 파일에 수정해준다.
+
+TestCode에서 @Transactional 어노테이션 사용시 롤백은 자동으로 되는지
+
+- **`@SpringBootTest`** (또는 `@DataJpaTest` 등 Spring 컨텍스트를 띄우는 어노테이션)
+- **`@Transactional`** (테스트 클래스나 메서드 위에 선언)
+
+Mockmvc 갹체를 선언한 이후에 여러 가지 빈(Filter, Interceptor, Controller) 매핑 정보를 사용하려면
+@AutoConfigureMockMvc를 사용하면 자동으라 사용 가능하다.
+
+Spock + Spring Boot 통합 테스트를 위해서는:
+
+spock-spring
+
+  1. @SpringBootTest에 명시적으로 메인 클래스 지정 필요
+
+
+통합테스트는 점심시간에 확인하기.

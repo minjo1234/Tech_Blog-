@@ -1,0 +1,68 @@
+---
+title: "Building My Own Tech Blog"
+date: "2025-01-15"
+description: "MDX test document."
+tags: ["nextjs", "mdx", "blog"]
+thumbnail: "/post/nextjs/logo.svg"
+---
+
+## Purpose
+---
+
+1. I've been using platforms like tistory, velog, github.io for my tech blog, which were convenient, but I wanted to create my own with customized features.
+
+2. Learning Next.js (Since we use Freemarker template engine at my company,
+there was a significant difference in load speed between pages, sometimes over 10 seconds (eg map page) and it took a long time when frequent reloads were needed,
+so I wanted to learn first and find a solution, and I thought Next.js was the right solution, so I'm making a learning blog in advance.)
+
+## Feature List
+---
+
+**Essential Features**
+
+- Post detail page
+- Post list page
+- Comment functionality
+- Portfolio page (career management)
+
+**Additional Features**
+- Table of Contents sidebar (TOC)
+- Dark/Light mode
+- Scroll to top/bottom
+- Copy post URL
+- Search Engine Optimization (SEO)
+- reading-time parsing
+- scroll progress status bar
+
+## Choosing Tech Stack
+---
+
+### 1. Framework: Next.js
+
+
+Next.js enables CSR, SSR, SSG per page and renders on the server like SSR but **provides additional features like Streaming, Prefetching, Client-side Transition** to deliver **smooth and fast user experience (UX) like an app**.
+
+Version: Next.js v15.5.4
+
+> Also, it's currently **one of the most prominent frameworks in the frontend market**, which was a factor in my choice.
+
+### 2. Design: Tailwind CSS
+
+I've been using Bootstrap, which is convenient for quick and general design, but has limited scope for customization, and additional CSS files were frequently created.
+Tailwind requires more initial learning than Bootstrap, but I chose it because it allows much more free styling afterwards.
+
+Version: tailwindcss@4.1.14
+
+### 3. Writing: MDX
+
+I plan to store mdx files in the project's internal directory, and won't add edit and delete functionality (since only I need to edit and delete).
+I chose `mdx` files which can use jsx syntax in addition to basic `md`.
+
+### 4. Parsing: Gray-matter
+
+### 5. Comments: Giscus
+
+### 6. Deployment: Vercel
+
+Since Vercel is the Cloud Platform company that made Next.js, it has very high compatibility
+and automatically performs the ci/cd pipeline when connected to a github repository, so I chose this.

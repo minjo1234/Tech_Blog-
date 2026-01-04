@@ -1,0 +1,264 @@
+---
+title: "How to Use Spring MessageSource in JS (Static Resources)"
+date: "2025-10-27"
+description: "Using Freemarker and CDN-based Vue, I had reusable components as .js files. When we got international clients, I needed to convert all Korean text to English!"
+tags: ["spring boot", "vue", "Freemarker", "Plugin Architecture"]
+thumbnail: "/post/docker/thumbnail.png"
+status: "complete"
+---
+
+## Problem
+
+Our project's frontend was built with Freemarker (Server Template Engine) + CDN Vue.
+Vue managed the data, and Freemarker handled server-side rendering for fast page loads.
+
+When we acquired an overseas client (Singapore), we naturally needed an English version of the portal.
+
+For internationalization:
+First, I created message.properties files in both ko and en versions to organize all text used on the web.
+I used the MessageSource library to read values by key.
+However, `js` (static resource) files couldn't use this syntax.
+
+Naturally, `ftl` files could use the `<@spring.message "${message.key}"/>` syntax with Freemarker processing for Korean/English support, but `js` files couldn't use it since they don't go through the template engine.
+
+There were two possible solutions:
+
+**1. Integrated FTL Approach**
+> Create a parent ftl file that bundles child js files and receives `<@spring.message />`.
+
+**2. Generate `message_${lang}.js` dynamically at build time**
+> Use `npm property-reader` at build time to generate static message_ko.js and message_en.js files.
+
+
+### 1. Integrated FTL Approach
+
+> I tried creating a parent ftl file to bundle child js files, receive spring.message, and call it via `<script>`
+
+```js title="common.ftl" {13-28}
+<script src="/res/js/highcharts.js" charset="UTF-8"></script>
+<script src="/res/js/data.js"></script>
+<script src="/res/js/highcharts-more.js"></script>
+<script src="/res/js/no-data-to-display.js"></script>
+<script src="/res/js/wordcloud.js"></script>
+
+var _ORGANIZATION_CODE_ = "${userInfo.organizationCode!''}"
+var _ORGANIZATION_NAME_ = "${userInfo.organizationName!""}";
+var _TEAM_NM_ = "${userInfo.teamName!''}"
+var _HAS_MULTI_ORGANIZATION_ = ${userInfo.hasMultiOrganization?c}
+const _DEFAULT_CPU_UNIT_ = "${cpuUnit}"
+
+<!-- dozens of scripts and hundreds of properties -->
+```
+
+**Pros**
+- Very effective if there's a parent `ftl` file that can bundle everything.
+- No variable management overhead or resource waste if calling only needed `<@spring.message />`.
+
+**Cons**
+- When there's no parent to bundle, unnecessary `ftl` files are created and variables become hard to manage.
+- If declaring all `js` files at the parent level, using one component requires loading dozens of `<script>` tags - a huge waste.
+- Developers must maintain two places (spring.message, ftl) - inconvenient.
+
+I dismissed the integrated FTL approach.
+
+### 2. Build-Time Approach
+
+The second solution was to use `npm property-reader`.
+
+I configured `build.gradle` to download the npm module if it doesn't exist,
+and during build, it reads message_ko.properties and message_en.properties to generate message_ko.js and message_en.js files,
+making them callable from static resource files.
+
+```gradle title="build.gradle"
+// Define task to install required Node.js packages
+task setupNodeModules(type: Exec) {
+description = "Node.js dependencies install (e.g., properties-reader)."
+commandLine 'npm', 'install'
+workingDir project.rootDir
+standardOutput = System.out
+errorOutput = System.err
+}
+
+// =====================================================================
+// [Optional] i18n JS file generation task (build time)
+// Disabled by default since ApplicationMessageToJsGenerator creates at runtime
+// Enable with: gradle -PgenerateI18nAtBuild=true build
+// =====================================================================
+task generateI18nJs(type: Exec) {
+description = "Generates i18n JavaScript files from properties at build time (optional)."
+commandLine 'node', 'build-i18n.js'
+workingDir project.rootDir
+standardOutput = System.out
+errorOutput = System.err
+enabled = project.hasProperty('generateI18nAtBuild') && project.generateI18nAtBuild == 'true'
+
+    doLast {
+        def jsFilePath = "${project.rootDir}/clovircm-web/src/main/resources/static/res/js/i18n/messages_ko.js"
+        if (!file(jsFilePath).exists()) {
+            throw new GradleException("Error: i18n JS file generation failed. Check build-i18n.js and file paths.")
+        }
+    }
+}
+```
+
+## Problem Occurred (Plugin-Architecture)
+
+An overseas client requested custom features. At the same time, another client requested different custom features.
+I designed the architecture, and since it's a monolithic architecture (not microservices), I considered a plugin architecture.
+
+Separating by branches wasn't a good choice because when other developers modify features in a customer's branch, maintenance/development time increases significantly.
+
+The plugin architecture consists of a core module and multiple plugin modules.
+Plugin modules contain customer-specific customized features, menus, and corresponding new message.properties.
+
+<Callout type="warning">
+In plugin architecture, plugins are deployed after the web is deployed, and **no rebuild occurs after plugin deployment** - this is the core issue.
+</Callout>
+
+Since building js files at build time became impossible,
+I changed the work from build time to server startup time.
+Generate js files once at runtime, and if a plugin is registered, do it one more time.
+
+## Code Modification
+
+The code modification requires just one simple class.
+
+1. A Generator that can read `message.properties` files stored in backend source
+2. Configure message.js.output.path separately for local and production (because war and local have different static file paths).
+3. After PluginLoader (plugin processing) and DatabaseMessageSource (storing message_properties in DB), set up post-processing to generate `js` files at runtime - that's it.
+
+
+### MessageFileGenerator
+```java title="MessageFileGenerator"
+public class MessageFileGenerator {
+
+    private final MessageSourceRepository messageSourceRepository;
+    private static final String[] LOCALES = {"ko", "en"};
+    private static final String JS_VAR_NAME = "ALL_MESSAGES";
+    private static final Charset UTF_8 = StandardCharsets.UTF_8;
+
+    @Value("${message.js.output.path}")
+    private String outputDirectory;
+
+    public void generateJsFiles() {
+        List<MessageSource> sources = messageSourceRepository.findAll();
+        Map<String, List<MessageSource>> groupedByLocale = sources.stream().collect(Collectors.groupingBy(MessageSource::getLocale));
+
+        for (String locale : LOCALES) {
+            try {
+                String fileName = "messages_" + locale + ".js";
+                Path filePath = Paths.get(outputDirectory, fileName);
+                Files.createDirectories(filePath.getParent());
+                Files.write(filePath, generateJsContent(groupedByLocale.get(locale)).getBytes(UTF_8));
+            } catch (Exception e) {
+                log.error("Failed to generate JS file for locale: {}", locale, e);
+            }
+        }
+    }
+}
+```
+
+### Classes with `message.properties` post-processing
+
+```java {5} {14}
+@PostConstruct
+    public void init() {
+        if (messageSourceRepository.findAny() == null || messageReload) {
+            initMessageFileToDb();
+            messageFileGenerator.generateJsFiles(); // This part
+        } else {
+            reloadToCache();
+        }
+    }
+
+@PostConstruct
+public void init() {
+        if (pluginInstallable && pluginInfo.isPresent()) {
+            if (messageReload) reloadPluginMessages(); // This part
+            if (menuReload) reloadPluginMenu();
+        }
+    }
+```
+
+### Static file configuration for production and local
+
+#### production
+
+```properties
+# production
+message.js.output.path=${catalina.base}/webapps/ROOT/WEB-INF/classes/static/res/js/i18n
+```
+
+#### local
+```properties
+# local
+message.js.output.path = /src/main/resources/static/res/js/i18n
+```
+
+### 4. Helper to Read Generated JS Files
+
+```js
+function getI18nMessage(key, args = []) {
+    // Use currentLang (ko, en) defined in FTL
+    const langCode = window.currentLang ? window.currentLang.toUpperCase() : 'KO';
+
+    // Global object name generated by build script (e.g., ALL_MESSAGES_KO, ALL_MESSAGES_EN)
+    const jsVarName = `ALL_MESSAGES_${langCode}`;
+    const messages = window[jsVarName];
+
+    if (!messages || !messages[key]) {
+        return `${key}`;
+    }
+
+    let message = messages[key];
+
+    if (args.length > 0) {
+        args.forEach((arg, index) => {
+            // Replace {0}, {1}, {2} ... with actual values
+            const placeholder = `{${index}}`;
+            message = message.split(placeholder).join(arg);
+        });
+    }
+
+    return message;
+}
+```
+
+### Usage
+
+Using Vue.js computed properties, pass the same key that exists in `message.properties` to retrieve the translated text.
+
+```js
+Vue.component('create-btn', {
+    props: [
+      'resourceType'
+    ],
+
+    data: function(){
+        return {
+            createAuthority: 'ALL'
+        }
+    },
+    computed:{
+        createButtonText() {
+            return getI18nMessage('requestaction.create');
+        }
+    },
+    template: `
+        <button class="new" :disabled="createAuthority == 'NONE'" @click="goToCreateIndex()">{{ createButtonText }}</button>
+    `
+})
+```
+
+## Reflection
+
+At first, I tried to solve it simply by creating an integrated FTL and calling it from the parent, but gave up due to performance issues.
+Then I tried to solve it using `npm module` at build time, but gave that up too when plugin architecture was introduced.
+
+Through trying three different approaches, I came to truly understand the difference between build-time and runtime generation.
+Build-time generation looked cleaner, but runtime generation was a much more flexible choice in environments with dynamic changes like plugins.
+
+Finally, I chose the runtime execution method, and looking back, I wonder if I could have designed it this way from the start.
+If I had asked "Will plugins be needed in the future?" during the requirements definition stage, I could have skipped the second attempt.
+
+From now on, I'll make a habit of considering extensibility before my hands start moving!

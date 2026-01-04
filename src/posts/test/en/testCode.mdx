@@ -1,0 +1,192 @@
+---
+title: "My Own Test Code Writing Method"
+date: "2025-12-17"
+description: "I was using Freemarker and CDN-style Vue. I created reusable source as .js files in component format, but when overseas customers appeared, I needed to change all Korean on the web to English..!"
+tags: ["Azure", "Workload", "Public Cloud"]
+thumbnail: "/post/docker/thumbnail.png"
+---
+
+Posted on 2025-12-17
+I'm going to try creating my own test code writing method.
+
+Of course books and lectures talk about how to write test code
+but I think it will resonate more if I look at it after practicing my own test code writing method.
+
+
+Mock: Behavior verification (define whether it was called or not, how many times if called, etc.)
+Stub: Set to return arbitrary values
+
+There are cases where Controller, Repository, Service are declared as Mock, Stub, new object at the top of TestCode Class file.
+
+Will you verify the call? -> Mock
+Should the actual logic be executed? -> new
+- To actually call methods, you need to create with new object that has been given dependencies.
+Will you arbitrarily set values? -> Stub
+
+Object declaration position is also important.
+
+Let's assume we're using a test controller that retries events.
+When writing a test case where event retry only works in FAIL or FAIL_TASK states,
+for Controllers made with new objects, they call actual methods, so dependencies must be provided.
+But in groovy's case, code executes sequentially from top -> bottom, so object declaration position is very important.
+Declare Mock, Stub dependencies first, then declare what receives the injection.
+
+```java
+class EventReplayControllerTest extends Specification {
+    def eventReplayController = new EventReplayController(eventSourceRepository, eventOrchestrator);
+    def eventSourceRepository = Stub(EventSourceRepository);
+    def eventOrchestrator = Mock(EventOrchestrator);
+    }
+```
+
+```java
+class EventReplayControllerTest extends Specification {
+    def eventSourceRepository = Stub(EventSourceRepository);
+    def eventOrchestrator = Mock(EventOrchestrator);
+    def eventReplayController = new EventReplayController(eventSourceRepository, eventOrchestrator);
+}
+```
+
+
+## When creating objects and declaring values inside test cases
+
+```groovy
+class EventReplayControllerTest extends Specification {
+    def "FAIL, FAIL_TASK status event retry returns success response"() {
+        given: "FAIL status EventSource UUID"
+        def uuid = "test-event-uuid-001"
+        def eventSource = Stub(EventSource) {getEventStatus() >> EventStatus.FAIL}
+        eventSourceRepository.findByUuid(uuid) >> Optional.of(eventSource)
+    }
+}
+```
+
+
+Looking at this test case, Mock object is only used for verification, but why can eventSource be used like a Stub object (by assigning values)
+if you declare values through the stubbing syntax `{getEventStatus() >> EventStatus.FAIL}` even when creating it as a Mock object.
+This is because Mock has the property of including Stub functionality.
+
+But I was curious.
+
+### Stub value declaration and calls
+
+If it's a stub object, it seems like the getEventStatus() method that gets the EventStatus value of eventSource shouldn't execute
+but it executed and was verified in the verification statement eventSource.getEventStatus() == EventStatus.FAIL..
+
+- Calls can be made freely.
+- Returning stubbed values is a characteristic of Stub objects.
+- It wasn't actually called, the value was returned.
+- So there's a difference from Mock objects where calls are verified.
+
+Not execution of execution logic (x): Not actual Java code execution.
+Proxy object response (o): Pre-setting return values according to requests to fake objects.
+
+
+### Stub's promise for 'future calls'.
+
+Pre-define values for eventSourceRepository.findByUuid(uuid).
+When there's a statement calling eventSourceRepository in eventReplayController.replayEvent,
+specify to use the pre-defined values for eventSourceRepository.findByUuid(uuid) at this time.
+(Promise of return)
+
+- Behavior Definition, Interaction Recording
+
+```groovy
+ def "FAIL, FAIL_TASK status event retry returns success response"() {
+        given: "FAIL status EventSource UUID"
+        def uuid = "test-event-uuid-001"
+        def eventSource = Stub(EventSource) {getEventStatus() >> EventStatus.FAIL}
+        // Pre-define value return if this method is used in the future.
+        eventSourceRepository.findByUuid(uuid) >> Optional.of(eventSource)
+
+        when: "Retry API call"
+        def response = eventReplayController.replayEvent(uuid)
+
+        then: "Verify eventOrchestrator.replay() call"
+        1 * eventOrchestrator.replay(eventSource)
+
+        and: "Return empty string"
+        response == ""
+        eventSource.getEventStatus() == EventStatus.FAIL
+    }
+```
+
+### setup()
+
+When all test cases use the same controller and dependencies,
+it's better to use the setup() method than field declaration.
+
+When new objects depend on Mock/Stub objects to monitor actual behavior and values,
+when judgment of conditions etc. is required, create actual objects for judgment.
+
+When assuming API success and getting values: Stub
+When verifying call count: Mock
+When internal logic and conditional judgment is needed: Judge with new object.
+
+- Wrong method
+- Can check if data goes in with wrong values different from what I expect.
+- Methods must always have values without missing any.
+
+When conditional statements requiring judgment occur, create actual objects for judgment.
+Not all events should restart, only failed events should restart
+but Stub couldn't judge that conditional statement, and I understood that actual objects must be created to solve that problem.
+
+```groovy
+
+    def "FAIL, FAIL_TASK status event retry returns success response"() {
+        given: "FAIL status EventSource"
+        def uuid = "test-event-uuid-001"
+        def eventSource = EventSource.builder()
+                .uuid(uuid)
+                .eventKey("test-key")
+                .eventStatus(EventStatus.FAIL)
+                .build()
+        eventSourceRepository.findByUuid(uuid) >> Optional.of(eventSource)
+
+        when: "Retry API call"
+        def response = eventReplayController.replayEvent(uuid)
+
+        then: "Verify eventOrchestrator.replay() call"
+        1 * eventOrchestrator.replay(eventSource)
+
+        and: "Return empty string"
+        response == ""
+    }
+```
+
+I basically think more test cases the better,
+but since our time isn't unlimited, we should look at ROI (cost vs time).
+
+1.Unit Test
+- Write test cases for the smallest unit of logic that can occur.
+
+2.Integration Test
+- One flow from API call to saving in DB?
+- Transaction issues:
+- SQL syntax
+- Constraint violations
+- Prevent data accumulation by rolling back on test success with CleanUp.
+
+My criteria
+- Unit tests don't use DB, judge logic.
+- Integration tests use DB, confirm logic result reflection
+
+
+Update in TECH_DETAIL.md file.
+
+Does @Transactional annotation in TestCode automatically rollback
+
+- **`@SpringBootTest`** (or annotations that launch Spring context like `@DataJpaTest`)
+- **`@Transactional`** (declared above test class or method)
+
+After declaring Mockmvc object, to use various bean (Filter, Interceptor, Controller) mapping information
+use @AutoConfigureMockMvc for automatic use.
+
+For Spock + Spring Boot integration testing:
+
+spock-spring
+
+  1. Need to explicitly specify main class in @SpringBootTest
+
+
+Check integration tests during lunch break.

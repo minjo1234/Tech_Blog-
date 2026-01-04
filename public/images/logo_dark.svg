@@ -1,0 +1,33 @@
+<svg width="400" height="100" viewBox="0 0 400 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- 다크모드용 로고 (밝은 색상) -->
+
+  <!-- 네트워크 아이콘 (청록색) -->
+  <g id="icon">
+    <!-- 연결선들 -->
+    <line x1="30" y1="30" x2="45" y2="20" stroke="#14B8A6" stroke-width="2"/>
+    <line x1="30" y1="30" x2="45" y2="40" stroke="#14B8A6" stroke-width="2"/>
+    <line x1="30" y1="30" x2="15" y2="40" stroke="#14B8A6" stroke-width="2"/>
+    <line x1="45" y1="20" x2="60" y2="20" stroke="#14B8A6" stroke-width="2"/>
+    <line x1="45" y1="40" x2="60" y2="50" stroke="#14B8A6" stroke-width="2"/>
+    <line x1="30" y1="70" x2="45" y2="60" stroke="#14B8A6" stroke-width="2"/>
+    <line x1="45" y1="60" x2="60" y2="50" stroke="#14B8A6" stroke-width="2"/>
+    <line x1="30" y1="70" x2="15" y2="60" stroke="#14B8A6" stroke-width="2"/>
+    <line x1="15" y1="40" x2="15" y2="60" stroke="#14B8A6" stroke-width="2"/>
+
+    <!-- 노드들 -->
+    <circle cx="30" cy="30" r="4" fill="#14B8A6"/>
+    <circle cx="45" cy="20" r="4" fill="#14B8A6"/>
+    <circle cx="45" cy="40" r="4" fill="#14B8A6"/>
+    <circle cx="60" cy="20" r="4" fill="#14B8A6"/>
+    <circle cx="15" cy="40" r="4" fill="#14B8A6"/>
+    <circle cx="30" cy="70" r="4" fill="#14B8A6"/>
+    <circle cx="45" cy="60" r="4" fill="#14B8A6"/>
+    <circle cx="60" cy="50" r="4" fill="#14B8A6"/>
+    <circle cx="15" cy="60" r="4" fill="#14B8A6"/>
+  </g>
+
+  <!-- Minlog 텍스트 (흰색) -->
+  <text x="85" y="62" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#FFFFFF">
+    Minlog
+  </text>
+</svg>

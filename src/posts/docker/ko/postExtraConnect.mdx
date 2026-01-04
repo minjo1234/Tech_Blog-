@@ -1,0 +1,392 @@
+---
+title: "Docker Compose에서 외부 포트 제거했더니 외부 시스템 통신이 안 되는 이유"
+date: "2025-10-27"
+description: "Nginx 도입 이후 불필요한 외부 포트를 노출시키지 않기 위해 web container의 ports를 제거했다. 제거하면서 이용하던 외부시스템(Redis, Kafka, vCenter, Kubernetes)들과 통신이 되지 않았고 이를 해결한 트러블슈팅 글"
+tags: ["docker", "network", "nginx", "troubleshooting"]
+thumbnail: "/post/docker/thumbnail.png"
+---
+
+## 문제 상황
+---
+
+Web, Nginx, DB 컨테이너로 이루어져 있었고, Web 컨테이너는 Redis, Kafka, vCenter, Kubernetes 등 **외부 시스템과 직접 통신** (docker-compose의 `extra_hosts` 옵션을 이용)하고 있었습니다.
+
+하지만 Nginx를 통해 트래픽을 라우팅하고 있음에도 불구하고, Web과 DB 컨테이너가 **불필요하게 외부로 Port를 노출**하고 있다는 점이 우려되었습니다.
+
+이러한 문제를 개선하기 위해 Docker Compose 구성에서 Web, DB의 Port 노출을 제거하는 방향으로 수정하고자 합니다.
+
+![시스템 구조도](/post/docker/system_relation.png)
+
+
+## docker-compose.yml 수정
+---
+
+### ❌ Before
+
+```yml title="docker-compose.yml" {21-22}
+services:
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d
+    restart: always
+    networks:
+      - net
+    depends_on:
+      - web
+
+  web:
+    image: web
+    container_name: web
+    volumes:
+      - ./app:/app
+    ports:
+      - "8086:8888"  # 외부 포트 노출
+    extra_hosts:
+      - "test.example.com:10.100.64.4"
+    networks:
+      - net
+
+  db:
+    image: mysql:8.0
+    container_name: db
+    ports:
+      - "3306:3306"  # 외부 포트 노출
+    networks:
+      - net
+
+networks:
+  net:
+    driver: bridge
+```
+
+### ✅ After
+
+```yml title="docker-compose.yml" {21}
+services:
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d
+    restart: always
+    networks:
+      - net
+    depends_on:
+      - web
+
+  web:
+    image: web
+    container_name: web
+    volumes:
+      - ./app:/app
+    # ports 제거 - 외부 포트 노출 안 함
+    extra_hosts:
+      - "test.example.com:10.100.64.4"
+    networks:
+      - net
+
+  db:
+    image: mysql:8.0
+    container_name: db
+    # ports 제거 - 외부 포트 노출 안 함
+    networks:
+      - net
+
+networks:
+  net:
+    driver: bridge
+```
+
+### 핵심 변경사항
+
+nginx를 제외한 **web, db 컨테이너의 `ports` 설정을 제거**하여 외부 포트 노출을 차단했습니다.
+
+## 발생한 문제
+---
+
+파일을 수정한 후 컨테이너들을 재기동하였더니 **외부 시스템과의 Connection Error 로그**가 발생했습니다.
+
+문제를 파악하기 위해 Host와 Container의 **3가지 요소(DNS, 라우팅, 방화벽)**를 점검하기로 했습니다.
+
+<Callout type="info">
+    - 외부 시스템 IP: `10.100.64.4`
+    - 외부 시스템 도메인: `test.example.com`
+</Callout>
+
+## 원인 분석
+---
+
+### 1️⃣ Host 서버 점검
+
+```bash
+ping 10.100.64.4          # ✅ 정상 작동
+nslookup test.example.com # ✅ 정상 작동
+```
+
+### 2️⃣ Web Container 점검
+
+```bash
+docker exec -it web bash      # 컨테이너 접근
+ping 10.100.64.4              # ❌ 연결 실패 (Packet filtered)
+nslookup test.example.com     # ✅ 정상 작동
+```
+
+### 분석 결과
+
+- `nslookup`이 정상 작동 → **DNS 문제 아님** ✅
+- `ping` 실패 (Packet filtered) → **iptables 또는 커널 레벨 문제** ❌
+
+<Callout type="warning">
+Docker 공식문서에 따르면, **`ports`를 지정하지 않은 컨테이너는 외부와 직접 통신할 NAT 라우트(POSTROUTING MASQUERADE)를 자동으로 설정하지 않습니다.**
+</Callout>
+
+Docker가 컨테이너에 대해 다음 규칙을 자동으로 설정하는데:
+```bash
+iptables -t nat -A POSTROUTING -s <bridge_subnet> -j MASQUERADE
+```
+
+`ports`나 `network_mode: host`가 없는 경우 이 규칙이 적용되지 않아 **패킷이 외부망으로 나가지 못합니다.**
+
+즉, 내부 DNS는 되지만 **실제 패킷 라우팅이 막히는 것**입니다.
+
+## 해결 방안
+---
+
+해결 방안은 크게 **3가지**가 있습니다:
+
+> 1. `network_mode: host` 설정
+> 2. iptables FORWARD 정책 변경
+> 3. iptables NAT/FORWARD 규칙 추가
+
+---
+
+### 방법 1: network_mode를 "host"로 설정
+
+#### 장점
+- 가장 간단함 (한 줄만 추가)
+- 즉시 외부 통신 가능
+
+#### 단점
+- 내부 컨테이너 네트워크에서 격리됨
+- 다중 컨테이너 환경에서 부적합
+
+```yml title="docker-compose.yml"
+services:
+  web:
+    network_mode: "host"  # 추가
+```
+
+<Callout type="warning">
+단일 컨테이너 환경이 아니라면 권장하지 않습니다.
+</Callout>
+
+---
+
+### 방법 2: iptables 정책을 DROP → ACCEPT로 변경
+
+#### 문제점
+- **모든 Docker bridge 네트워크 대역(172.x.x.x)이 외부와 통신 가능**
+- 보안에 매우 취약
+- 특수한 케이스를 제외하고는 사용 금지
+
+```bash
+sudo iptables -P FORWARD ACCEPT  # ⚠️ 권장하지 않음
+```
+
+<Callout type="warning">
+전체 네트워크를 열어두는 것은 보안상 매우 위험합니다.
+</Callout>
+
+---
+
+### 방법 3: iptables NAT 및 FORWARD 규칙 추가 ⭐ (권장)
+
+#### 선택 이유
+- **특정 컨테이너와 외부 시스템 간 통신만 허용**
+- 보안에 안전하면서 내부 컨테이너 통신도 보장
+- 세밀한 제어 가능
+
+<Callout type="info">
+**개념 설명**
+
+- **NAT 설정**: 패킷이 외부 네트워크로 나갈 수 있도록 "소스 IP 변환"
+- **FORWARD 설정**: 변환된 패킷이 커널에서 필터링되지 않도록 허락
+
+**두 가지가 모두 있어야 통신이 완전히 열립니다.**
+</Callout>
+
+## 구체적인 해결 과정
+---
+
+### Step 1: Docker 네트워크 확인
+
+```bash
+docker network inspect <network_name>
+```
+
+출력에서 **Subnet 값을 확인**합니다:
+
+```json {7-8}
+"IPAM": {
+    "Driver": "default",
+    "Options": null,
+    "Config": [
+        {
+            "Subnet": "172.20.0.0/16",
+            "Gateway": "172.20.0.1"
+        }
+    ]
+}
+```
+
+### Step 2: iptables FORWARD 규칙 추가
+
+```bash title="양방향 통신 허용"
+# Docker → 외부 시스템
+sudo iptables -I FORWARD 1 -s 172.20.0.0/16 -d 10.100.64.0/24 -j ACCEPT
+
+# 외부 시스템 → Docker (응답 패킷)
+sudo iptables -I FORWARD 1 -s 10.100.64.0/24 -d 172.20.0.0/16 -j ACCEPT
+```
+
+#### 일반화된 명령어
+
+```bash
+sudo iptables -I FORWARD 1 -s <docker_subnet> -d <external_subnet> -j ACCEPT
+sudo iptables -I FORWARD 1 -s <external_subnet> -d <docker_subnet> -j ACCEPT
+```
+
+<Callout type="info">
+제 경우는 **web 컨테이너(172.20.0.0/16)** 와 **Kafka(10.100.64.0/24)** 간 양방향 통신을 위해 위 규칙을 적용했습니다.
+</Callout>
+
+---
+
+### Step 3: 규칙 확인
+
+```bash
+sudo iptables -L FORWARD -n -v --line-numbers
+```
+
+#### 출력 예시
+
+```bash {3-4}
+Chain FORWARD (policy DROP 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination
+1        0     0 ACCEPT     0    --  *      *       172.20.0.0/16        10.100.64.0/24
+2        0     0 ACCEPT     0    --  *      *       10.100.64.0/24       172.20.0.0/16
+```
+
+✅ **source와 destination이 올바르게 등록되어 있으면 성공입니다.**
+
+---
+
+### Step 4: 규칙 영구 저장
+
+<Callout type="warning">
+**iptables는 휘발성**입니다. 서버 재부팅이나 Docker 데몬 재시작 시 자동으로 초기화됩니다.
+
+따라서 규칙이 한 번 잘 작동하더라도 `systemctl restart docker` 이후 다시 사라질 수 있습니다.
+</Callout>
+
+#### 영구 저장 방법
+
+**방법 1: netfilter-persistent 사용**
+```bash
+sudo apt install iptables-persistent -y  # 미설치 시
+sudo netfilter-persistent save
+```
+
+**방법 2: Docker 자동 규칙 비활성화 (수동 관리)**
+```json title="/etc/docker/daemon.json"
+{
+  "iptables": false
+}
+```
+
+---
+
+### Step 5: Docker 재시작 (필요 시)
+
+규칙을 추가했는데도 통신이 작동하지 않는다면 **Docker를 재시작**해보세요.
+
+```bash
+sudo systemctl restart docker
+```
+
+<Callout type="info">
+실제로 규칙을 적용했는데도 안 돼서 재시작했더니 정상 작동했습니다.
+</Callout>
+
+## 최종 확인
+---
+
+### 1. 컨테이너에서 외부 시스템 접속 테스트
+
+```bash
+docker exec -it web bash
+ping 10.100.64.4        # ✅ 성공
+curl test.example.com   # ✅ 성공
+```
+
+### 2. iptables 규칙 확인
+
+```bash
+sudo iptables -L FORWARD -n -v --line-numbers
+```
+
+### 3. 애플리케이션 로그 확인
+
+```bash
+docker logs web
+# Connection Error 로그가 사라졌는지 확인
+```
+
+## 정리
+---
+
+### 문제 원인
+- Docker는 `ports` 설정이 없는 컨테이너에 **자동으로 NAT 규칙을 생성하지 않음**
+- 내부 DNS는 작동하지만, **실제 패킷 라우팅이 차단됨**
+
+### 해결 방법
+1. Docker 네트워크 Subnet 확인
+2. iptables FORWARD 규칙 추가 (양방향)
+3. 규칙 영구 저장
+4. Docker 재시작 (필요 시)
+
+### 핵심 명령어
+
+```bash
+# 네트워크 확인
+docker network inspect <network_name>
+
+# 규칙 추가
+sudo iptables -I FORWARD 1 -s <docker_subnet> -d <external_subnet> -j ACCEPT
+sudo iptables -I FORWARD 1 -s <external_subnet> -d <docker_subnet> -j ACCEPT
+
+# 규칙 확인
+sudo iptables -L FORWARD -n -v --line-numbers
+
+# 영구 저장
+sudo netfilter-persistent save
+
+# Docker 재시작
+sudo systemctl restart docker
+```
+
+---
+
+## 참고 자료
+
+- [Docker Networking Documentation](https://docs.docker.com/network/)
+- [iptables Tutorial](https://www.netfilter.org/documentation/)
+- [Docker Compose Networking](https://docs.docker.com/compose/networking/)

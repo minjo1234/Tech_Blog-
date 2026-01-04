@@ -1,0 +1,62 @@
+---
+title: "비동기 처리와 트랜잭션"
+date: "2025-12-29"
+description: "I was using Freemarker and CDN-style Vue. I created reusable source as .js files in component format, but when overseas customers appeared, I needed to change all Korean on the web to English..!"
+tags: ["Async", "transaction", "framework"]
+thumbnail: "/post/docker/thumbnail.png"
+---
+
+### 문제 상황
+`@Transaction` 어노테이션을 상위 메서드에서 사용을 하고 있었고, 비동기 이벤트처리를 이용하여 자원이 생성될경우 자원테이블에, 상태를 후처리 작업으로 상태 테이블에 저장하고 있었다.
+
+
+```java
+@Transactional
+    public void task(CommandEvent event) {
+        deploy(event);
+    }
+```
+
+이 하단에 메소드에서 모든 작업들이(자원 저장, 이벤트 상태체크 및 저장) 일어나는데 자원은 저장되었는데, 이벤트 상태는 저장이 안 된 경우가 있었고,
+문제가 비동기와 트랜잭션의 경계 문제라는 것을 알게되었다.
+
+### 비동기와 트랜잭션의 경계란 ?
+
+기본적으로 Spring에서 `@Transactional` 을 사용하면 ACID 원칙을 보장받을 수 있다.
+그 중에 내가 현재 문제에 해당하는 것은 일관성일 것이다. (자원저장과 이벤트수정)이 모두 같은 트랜잭션 내에서 성공해야 한다는 것을 의미한다.
+
+하지만 비동기 로직과 트랜잭션을 동시에 사용할 경우
+**메서드의 실패로 메서드가 리턴될 때 커밋(현재 시점을 기록함)의 작업이 뒤따르지만, 비동기 작업은 계속 진행하고있다**
+
+1. task() 시작 -> 트랜잭션 시작
+2. deployAsync() 호출 -> 비동기 작업의 시작
+3. task() 종료 -> 트랜잭션 A 커밋 -> 트랜잭션 종료
+4. (비동기 콜백) -> handlePostDeploy() -> save() 호출
+5. save()는 @Transactional 있어서 새로운 트랜잭션이 시작된다.
+6. 이후 예외 발생 -> fail() 호출
+
+그럼 비동기로직을 사용할 때는 트랜잭션을 어떻게 사용해야 할까 ?
+-> 비동기로직 시점에 트랜잭션을 걸면 되는것 아닐까, 최상단에 거는 이유가 뭐가 있을까 ?
+
+
+
+// 4.트랜잭션안에 새로운 트랜잭션 어노테이션이 있다면 트랜잭션은 유지가 되는가 아니면 새로운 트랜잭션의 시작인가 ? -> 같은 트랜잭션에 올라탄다.
+
+트랜잭션은 쓰레드에 바인딩되는데
+
+@Transactional
+public void task(CommandEvent event) {  // 메인 스레드
+// [트랜잭션 A 시작 - 메인 스레드에 바인딩]
+
+      deploy(event);
+
+      deployAsync(...)  // 비동기 시작 (다른 스레드)
+          .thenAccept(result -> {
+              // 이 콜백은 별도 스레드에서 실행됨!
+              // 메인 스레드의 트랜잭션 A는 접근 불가!
+              handlePostDeploy(...);
+          });
+
+}  // 메서드 리턴 → [트랜잭션 A 커밋]
+
+비동기 메서드는 다른 쓰레드풀을 사용해버리기 때문에 다른 트랜잭션이 시작된다.

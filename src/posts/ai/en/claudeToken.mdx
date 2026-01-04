@@ -1,0 +1,24 @@
+---
+title: "Claude Token Management Guide"
+date: "2025-12-19"
+description: "I've been using Claude Code as my main development tool. However, I kept failing at token management, so I'm documenting how to manage it properly."
+tags: ["claude", "ai", "llm"]
+thumbnail: "/post/docker/thumbnail.png"
+---
+
+## The Problem
+
+I'm using Claude Code extensively for development. Except for one thing... token management is terrible.
+Even when I try to be careful, I run out of tokens in 1.5 to 2 hours and have to wait until they refresh.
+During that time, I organize documentation and review code I've modified, but to further improve productivity, I'm looking for and applying token management techniques.
+
+Regularly clean up context after completing each task.
+
+1. Reset context with the `/clear` command
+2. Check current status with the `/context` command
+- If any item exceeds 80%, proceed with clear
+3. `/compact`
+4. Set up Auto-compact through the `/config` command, and it will automatically clean up context
+
+Reference
+Claude Code Token Management Guide: https://www.youtube.com/watch?v=VbD8ITrJ6lg

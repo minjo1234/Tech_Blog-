@@ -1,0 +1,115 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css');
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --white: hsl(210 40% 98%);
+    --black: #121212;
+
+    --background: white;
+    --foreground: var(--black);
+
+    --secondary: hsl(210 40% 96.1%);
+    --secondary-foreground: hsl(222.2 47.4% 11.2%);
+
+    --informative: #e0f2fe;
+    --informative-foreground: var(--black);
+
+    --warning: #fef3c7;
+    --warning-foreground: var(--black);
+
+    --destructive: #fecdd3;
+    --destructive-foreground: var(--black);
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+}
+
+* {
+    font: 400 18px 'Roboto Slab', AppleSDGothicNeo, sans-serif;
+}
+
+/* Code Block Styles */
+pre {
+    overflow-x: auto;
+    border-radius: 0.5rem;
+}
+
+pre code {
+    display: block;
+    font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+    font-size: 0.875rem;
+    line-height: 1.7;
+}
+
+/* 줄 강조 */
+.highlighted {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-left: 3px solid #3b82f6;
+    padding-left: 0.75rem;
+    margin-left: -0.75rem;
+}
+
+/* Shiki 코드 블록 기본 스타일 */
+code[data-theme] {
+    background: transparent;
+}
+
+code[data-line] {
+    padding: 0 1rem;
+    display: block;
+}
+
+/* 인라인 코드 */
+:not(pre) > code {
+    background-color: hsl(var(--muted));
+    color: hsl(var(--foreground));
+    padding: 0.2em 0.4em;
+    border-radius: 0.25rem;
+    font-size: 0.875em;
+    font-weight: 600;
+}
+
+/* Blog animations */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

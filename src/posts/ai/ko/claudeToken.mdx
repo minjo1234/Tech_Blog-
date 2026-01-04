@@ -1,0 +1,26 @@
+---
+title: "Claude 토큰 관리법"
+date: "2025-12-19"
+description: "개발을 하며 claude code를 메인으로 사용하고 있었다. 하지만 매 번 토큰관리에 실패하다보니 답답해서 토큰 관리법을 정리한다."
+tags: ["claude", "ai", "llm",]
+thumbnail: "/post/docker/thumbnail.png"
+---
+
+## 문제 상황
+
+개발을 진행하면서 Claude Code를 너무 잘 이용하고있다. 단 한 가지만 빼고... 토큰관리가 너무 안된다.
+해보려고해도 1시간 반에서 2시간만에 다 사용해서 토큰이 refresh 될 때까지 계속 기다린다.
+그 시간에 문서정리도 하고 수정했던 소스를 점검하기도 하지만 생산성을 더욱 높이기위해 토큰관리법을 찾아보고 적용해보려고 한다.
+
+하나의 작업이 종료된 이후에 context를 주기적으로 정리해준다.
+
+1. /clear 명령어로 컨텍스트를 초기화
+2. /context 명령어로 현재 상태를 체크
+- 항목중 80%가 넘었다면 clear를 진행한다.
+3. /compact
+4. /config 명령어를 통해 Auto-compact를 설정해두면 알아서 context를 정리해준다.
+
+참고경로
+Claude Code Token 관리법 : https://www.youtube.com/watch?v=VbD8ITrJ6lg
+
+

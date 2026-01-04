@@ -1,0 +1,58 @@
+---
+title: "Playwright"
+date: "2025-12-17"
+description: "I was using Freemarker and CDN-style Vue. I created reusable source as .js files in component format, but when overseas customers appeared, I needed to change all Korean on the web to English..!"
+tags: ["Azure", "Workload", "Public Cloud"]
+thumbnail: "/post/docker/thumbnail.png"
+---
+
+## Background
+
+
+Before the playwright MCP came out, I used playwright
+to manage about 150 screen test cases that occurred in the portal.
+
+I applied data types for objects that could occur in typescript,
+and set it up so developers would manually modify test cases when objects changed.
+
+But this method had problems.
+It took time for developers to review the test cases for that feature again,
+and it was too cumbersome to forget or pay attention to every data change.
+
+## AI-based QA Engineering
+
+Developer -> Execute playwright by typing commands in terminal -> Modify test code
+
+- Problem: Must constantly check test case conventions for every feature modification, and manually set and change data when it changes.
+
+Emergence of MCP
+
+Developer -> Ask Claude Code to launch playwright and write new test cases referencing skills.
+
+- Advantage: When feature modifications occur, ask Claude Code to automatically modify by looking at the data format and template file referencing skills.
+
+
+In the past and present, I thought the domains of QA engineers and software developers were separate
+but using this process, I thought developers could somewhat perform the role of QA engineers simultaneously.
+
+
+With the emergence of Claude Skills
+- Convention for Playwright writing TEST_GUIDE.md
+- Use Faker library? - Need to check what Faker library is first
+- Define selector priorities.
+
+
+---
+
+### SKILLS Definition
+
+Defined SKILLS file according to playwright conventions used in the portal.
+After that, I requested migration of existing code
+and plan to find a way to launch playwright mcp afterward.
+
+How to request playwright mcp from claude code
+
+"Please test directly in the browser if LoginPage works properly"
+"Please actually test the login function and confirm it works properly"
+
+mixin: A directory where mixed features are.

@@ -1,0 +1,380 @@
+---
+title: "Docker 기본개념"
+date: "2025-11-09"
+description: "Docker를 사용한 지 1년 반이 되었다. 누구에게 비유하면서 설명하는 것을 좋아하기 때문에 정리해보려고 한다."
+tags: ["docker"]
+thumbnail: "/post/docker/thumbnail.png"
+---
+
+## Docker란?
+---
+
+프렌차이즈를 만들고 싶은데, 지점마다 맛의 일관성을 유지하고 싶다면 어떻게 해야 할까요?
+바로 **Docker**를 사용하는 것입니다.
+
+OS(Linux, Windows, Mac)마다 설치 파일과 환경 설정이 다르지만, Container를 이용하면 격리된 실행 환경을 제공하기 때문에 어떤 환경에서든 동일하게 사용이 가능합니다.
+
+<Callout type="info">
+**Docker를 사용하는 이유**
+
+프렌차이즈처럼 여러 환경에서도 일관된 맛(성능)을 보장하기 위해 밀키트(이미지)를 사용합니다.
+</Callout>
+
+## Docker 기본 구성 요소
+---
+
+| **요소** | **설명** | **비유** |
+| --- | --- | --- |
+| **Image** | 컨테이너의 청사진. 실행환경과 애플리케이션을 포함 | 밀키트 |
+| **Container** | 이미지를 기반으로 실행되는 격리된 프로세스 | 냄비 |
+| **Volume** | 데이터 지속성 유지용 저장소. 컨테이너 삭제 후에도 남음 | 재료함 |
+| **Network** | 컨테이너 간 통신을 담당하는 가상 네트워크 | 주방 |
+| **Registry** | 이미지 저장소 (Docker Hub, Nexus, Harbor 등) | 밀키트 공장 |
+
+## Docker를 요리에 비유하면?
+---
+
+Docker의 동작 과정을 요리에 비유하면 다음과 같습니다:
+
+**손님(Host) ↔ 주방(Network) ↔ 밀키트 공장(Registry)**
+
+![시스템 구조도](/post/docker/basicInfo.png)
+
+### 1️⃣ 밀키트 공장 (Registry)
+
+밀키트 공장에서는 다양한 밀키트(Image)를 생산합니다:
+- Redis
+- DB (MariaDB, MySQL, Oracle)
+- Custom Image (포털)
+- Nginx, Apache
+
+```bash title="이미지 관리 명령어"
+# 밀키트(이미지) 가져오기
+docker pull <image-name>
+
+# 보유한 밀키트(이미지) 확인
+docker images
+```
+
+
+---
+
+### 2️⃣ 주방에서 조리하기 (Network & Container)
+
+주방(Network) 안에서 냄비(Container)에 밀키트(Image)를 조리합니다.
+
+```bash title="컨테이너 실행"
+docker run -d -p <외부포트>:<내부포트> <이미지이름>
+```
+
+```bash title="네트워크 확인"
+# 네트워크 상세 정보 확인
+docker network inspect <network-name>
+```
+
+<Callout type="info">
+기본적으로 Docker Network는 **172.17.0.0/16 ~ 172.31.0.0/16 대역** 등 사설 IP 대역의 내부망을 사용하므로, 외부(Host)에서는 직접 접근할 수 없습니다.
+</Callout>
+
+---
+
+### 3️⃣ 재료 추가하고 보관하기 (Volume & Mount)
+
+Docker Container는 기본적으로 **정보를 기억하지 않습니다.** 컨테이너가 삭제되면 그 안의 모든 데이터가 사라집니다.
+
+이를 해결하기 위해 **Volume**과 **Mount**를 사용합니다:
+
+<Callout type="info">
+**핵심 개념**
+- **바인드 마운트**: 호스트의 파일/폴더를 컨테이너에 주입 (설정 파일용)
+- **Named Volume**: Docker가 관리하는 영구 저장소 (데이터 보관용)
+</Callout>
+
+#### 🔹 바인드 마운트 (Bind Mount)
+
+**용도**: 환경별로 다른 설정 파일을 주입할 때 사용
+
+- 호스트의 **특정 경로**를 컨테이너에 직접 마운트
+- 예: `./nginx.conf:/etc/nginx/nginx.conf`
+- 파일/폴더 위치를 정확히 알고 있을 때 사용
+
+**언제 사용하나요?**
+- 보안 설정, DB 설정, Tomcat 설정 등 **환경별로 다른 설정 파일** 관리
+- 개발/스테이징/운영 환경별로 다른 DB 접속 정보, API 엔드포인트 등
+- Dockerfile에 직접 설정할 수도 있지만, 서버 환경에 따라 값이 달라질 수 있어 **마운트 방식을 권장**
+
+---
+
+#### 🔹 Named Volume (Docker Volume)
+
+**용도**: 컨테이너 삭제 후에도 데이터를 영구 보관할 때 사용
+
+- Docker가 관리하는 **Named Volume** 사용
+- 예: `db-data:/var/lib/mysql`
+- Docker가 저장 위치를 자동 관리 (일반적으로 `/var/lib/docker/volumes/`)
+- 데이터 영속성과 이식성이 좋음
+
+**언제 사용하나요?**
+- DB 데이터 (MySQL, PostgreSQL, MongoDB 등)
+- 로그 파일
+- 사용자 업로드 파일
+- **핵심**: 컨테이너를 삭제해도 데이터의 **영속성**을 보장
+
+<Callout type="warning">
+**요리 비유로 이해하기**
+
+- **바인드 마운트**: 냄비 밖의 **레시피(설정)**를 냄비 안에 넣기
+- **Named Volume**: 냄비 안의 **재료(데이터)**를 재료함에 영구 보관
+
+요리(컨테이너)가 끝나도 재료함(Volume)에 있는 재료(데이터)는 그대로 남습니다!
+</Callout>
+
+---
+
+#### 실전 예시
+
+```yaml title="docker-compose.yml 볼륨 예시"
+services:
+  web:
+    image: nginx
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf  # 바인드 마운트 (설정 파일)
+      - app-data:/var/www/html              # Named Volume (업로드 파일)
+
+  db:
+    image: mysql:8.0
+    volumes:
+      - db-data:/var/lib/mysql               # Named Volume (DB 데이터)
+
+volumes:
+  app-data:
+  db-data:
+```
+
+**결과**:
+- `nginx.conf` 파일은 호스트에서 직접 수정 가능
+- 컨테이너를 삭제해도 `app-data`와 `db-data`는 보존됨
+- 여러 컨테이너가 같은 볼륨을 공유할 수 있음
+
+---
+
+### 4️⃣ 한 상 차리기 (Docker Compose)
+
+여러 개의 냄비(컨테이너)로 만든 한 상이 바로 `docker-compose.yml`입니다.
+
+예시: DB, Web, Nginx, Redis로 구성된 식단
+
+```yaml title="docker-compose.yml"
+version: '3'
+services:
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - app-network
+    depends_on:
+      - web
+
+  web:
+    image: custom-web:latest
+    container_name: web
+    volumes:
+      - ./app:/app
+    networks:
+      - app-network
+
+  db:
+    image: mysql:8.0
+    container_name: db
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  db-data:
+```
+
+---
+
+### 5️⃣ 손님 접대하기 (외부 접근)
+
+- 여러 냄비(컨테이너) 끼리는 주방 내부망(Network)을 통해 소스나 재료를 주고받습니다
+- 외부 손님(Host)은 주방에 바로 접근할 수 없습니다
+- 손님이 직접 주방으로 접근하려면 **외부 포트**를 설정해야 합니다
+
+```yaml title="포트 매핑 예시" {5-6}
+services:
+  web:
+    image: nginx
+    ports:
+      - "8080:80"  # Host의 8080 포트 → Container의 80 포트
+```
+
+<Callout type="warning">
+포트를 외부에 노출할 때는 보안을 고려해야 합니다. 필요한 서비스만 최소한으로 노출하는 것이 좋습니다.
+</Callout>
+
+## 주요 Docker 명령어
+---
+
+```bash title="자주 사용하는 명령어"
+# 컨테이너 로그 확인
+docker logs <container-name>
+docker logs -f <container-name>  # 실시간 로그 추적
+
+# 사용하지 않는 이미지 삭제
+docker image prune -a
+
+# 컨테이너 상세 정보 확인
+docker inspect <container-name>
+
+# 실행 중인 컨테이너 확인
+docker ps
+
+# 모든 컨테이너 확인
+docker ps -a
+
+# 컨테이너 내부 접속
+docker exec -it <container-name> bash
+```
+
+## Docker 실전 구성
+---
+
+### Dockerfile 주요 명령어
+
+```dockerfile title="Dockerfile 예시"
+# 베이스 이미지 지정
+FROM node:18-alpine
+
+# 작업 디렉토리 설정
+WORKDIR /app
+
+# 파일 복사
+COPY package*.json ./
+
+# 이미지 빌드 시 실행할 명령어
+RUN npm install
+
+# 소스 코드 복사
+COPY .. .
+
+# 포트 노출
+EXPOSE 3000
+
+# 컨테이너 실행 시 기본 명령어
+CMD ["npm", "start"]
+```
+
+#### 주요 명령어 설명
+
+- `FROM`: 베이스 이미지 지정
+- `WORKDIR`: 작업 디렉토리 설정
+- `COPY`: 파일 복사
+- `RUN`: 이미지 빌드 시 실행할 명령어
+- `EXPOSE`: 포트 노출
+- `CMD`: 컨테이너 실행 시 기본 명령어
+- `ENTRYPOINT`: 컨테이너 실행 시 진입점 (CMD와 함께 사용)
+
+---
+
+### Docker Compose 주요 설정
+
+| **설정** | **설명** | **예시** |
+| --- | --- | --- |
+| `image` | 사용할 이미지 | `nginx:latest` |
+| `container_name` | 컨테이너 이름 | `web-container` |
+| `ports` | 포트 매핑 | `"8080:80"` |
+| `volumes` | 볼륨 설정 | `./app:/app` |
+| `networks` | 네트워크 구성 | `app-network` |
+| `environment` | 환경 변수 | `NODE_ENV=production` |
+| `depends_on` | 의존성 설정 | `- db` |
+
+## 추가 팁
+---
+
+### /etc/hosts 설정
+
+DNS 서버에 등록되어 있지 않은 경우, `/etc/hosts` 파일을 수정하여 직접 호스트명을 설정할 수 있습니다.
+
+```yaml title="docker-compose.yml extra_hosts 사용"
+services:
+  web:
+    image: nginx
+    extra_hosts:
+      - "custom.domain.com:10.100.64.4"
+```
+
+### 패키지 구성 방법
+
+Docker 이미지를 구성할 때는 필요한 패키지만 포함하여 이미지 크기를 최소화하는 것이 좋습니다.
+
+```dockerfile title="멀티 스테이지 빌드 예시"
+# 빌드 스테이지
+FROM node:18 AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+# 실행 스테이지
+FROM node:18-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+CMD ["node", "dist/index.js"]
+```
+
+<Callout type="info">
+멀티 스테이지 빌드를 사용하면 최종 이미지 크기를 크게 줄일 수 있습니다.
+</Callout>
+
+## 정리
+---
+
+### Docker의 핵심 개념
+
+> Docker는 밀키트처럼 표준화된 환경을 제공하여, 어떤 환경에서도 동일한 애플리케이션을 실행할 수 있게 해줍니다.
+
+### 주요 구성 요소
+
+1. **Image (밀키트)**: 실행 가능한 패키지
+2. **Container (냄비)**: 이미지를 실행한 인스턴스
+3. **Volume (재료함)**: 데이터 영속성 보장
+4. **Network (주방)**: 컨테이너 간 통신
+5. **Registry (공장)**: 이미지 저장소
+
+### 기억해야 할 명령어
+
+```bash
+# 기본 명령어
+docker pull <image>       # 이미지 다운로드
+docker run <image>        # 컨테이너 실행
+docker ps                 # 실행 중인 컨테이너 확인
+docker logs <container>   # 로그 확인
+docker exec -it <container> bash  # 컨테이너 접속
+
+# Compose 명령어
+docker-compose up -d      # 서비스 시작
+docker-compose down       # 서비스 중지 및 제거
+docker-compose logs -f    # 로그 확인
+```
+
+---
+
+## 참고 자료
+
+- [Docker 공식 문서](https://docs.docker.com/)
+- [Docker Compose 문서](https://docs.docker.com/compose/)
+- [Dockerfile 베스트 프랙티스](https://docs.docker.com/develop/dev-best-practices/)
